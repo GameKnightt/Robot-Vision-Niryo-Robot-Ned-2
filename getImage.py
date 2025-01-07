@@ -4,7 +4,7 @@ import cv2
 from io import BytesIO
 
 # Server URL
-IP = "172.21.182.17" # IP of the Raspberry Pi
+IP = "172.21.182.15" # IP of the Raspberry Pi
 PORT = "8000" # Port of the server
 server_url = f"http://{IP}:{PORT}/image.jpg"
 
