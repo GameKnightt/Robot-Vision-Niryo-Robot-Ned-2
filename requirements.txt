@@ -1,0 +1,10 @@
+asarPy==1.0.1
+certifi==2024.12.14
+charset-normalizer==3.4.1
+enum34==1.1.10
+idna==3.10
+numpy==2.2.1
+opencv-python==4.10.0.84
+pyniryo==1.1.2
+requests==2.32.3
+urllib3==2.3.0
