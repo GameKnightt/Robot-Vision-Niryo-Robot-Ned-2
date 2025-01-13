@@ -1,4 +1,4 @@
-# Projet Robot Vision
+# Projet Robot Vision Niryo Robot Ned 2
 
 Ce projet met en œuvre un robot Niryo pour détecter, trier et déplacer des jetons en fonction de leur couleur.  
 Il comprend plusieurs fonctions pour configurer le robot, détecter la couleur d'un objet et exécuter le mouvement d'un convoyeur.
