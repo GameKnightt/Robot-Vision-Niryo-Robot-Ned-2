@@ -7,6 +7,7 @@ from time import sleep as delay
 
 robot_ip = "172.21.182.53"  # Remplacez par l'IP de votre robot
 robot = NiryoRobot(robot_ip)
+conveyor_id = robot.set_conveyor()
 
 color_list = [
     [15, 50, 255],
@@ -29,41 +30,6 @@ def define_tcp():
     print('TCP Set')
     robot.enable_tcp(True)
     print('TCP Activate')
-
-def save_all_positions(robot):
-    positions = {}
-    position_names = []
-    
-    # Get list of positions to save
-    print("\n=== Position Recording Setup ===")
-    print("Enter position names (one per line). Enter empty line when done.")
-    while True:
-        name = input("Position name (or press Enter to finish): ").strip()
-        if not name:
-            break
-        position_names.append(name)
-    
-    print("\n=== Starting Position Recording ===")
-    # Record each position
-    for position_name in position_names:
-        input(f"\nPlease move robot to position '{position_name}' then press Enter to save...")
-        current_pose = robot.get_pose().to_list()
-        positions[position_name] = current_pose
-        print(f"Position '{position_name}' saved!")
-    
-    # Save all positions to file
-    with open('positions.json', 'w') as f:
-        json.dump(positions, f, indent=4)
-    
-    # Show recap
-    print("\n=== Saved Positions Recap ===")
-    for name, pose in positions.items():
-        print(f"\nPosition: {name}")
-        print(f"X: {pose[0]:.2f}, Y: {pose[1]:.2f}, Z: {pose[2]:.2f}")
-        print(f"RX: {pose[3]:.2f}, RY: {pose[4]:.2f}, RZ: {pose[5]:.2f}")
-    
-    print("\nAll positions have been saved to positions.json")
-    return positions
 
 def move_to_saved_positions(robot):
     # Load saved positions
@@ -107,6 +73,81 @@ def move_to_saved_positions(robot):
         except Exception as e:
             print(f"Error moving robot: {e}")
 
+def save_all_positions(robot):
+    # Charger les positions existantes
+    try:
+        with open('positions.json', 'r') as f:
+            positions = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        positions = {}
+
+    while True:
+        print("\n=== Positions enregistrées ===")
+        for name, pose in positions.items():
+            print(f"\nPosition: {name}")
+            print(f"X: {pose[0]:.2f}, Y: {pose[1]:.2f}, Z: {pose[2]:.2f}")
+            print(f"RX: {pose[3]:.2f}, RY: {pose[4]:.2f}, RZ: {pose[5]:.2f}")
+        
+        print("\nOptions:")
+        print("1. Ajouter/Modifier une position")
+        print("2. Supprimer une position")
+        print("3. Terminer")
+        
+        choice = input("\nChoisissez une option (1-3): ")
+        
+        if choice == "1":
+            name = input("\nNom de la position: ").strip()
+            if name:
+                # Vérifier si la position existe déjà
+                if name in positions:
+                    print(f"\nLa position '{name}' existe déjà.")
+                    print("Le robot va se déplacer à cette position...")
+                    try:
+                        robot.move_pose(positions[name])
+                        confirm = input("Voulez-vous modifier cette position ? (o/n): ").lower()
+                        if confirm != 'o':
+                            print("Modification annulée")
+                            continue
+                    except Exception as e:
+                        print(f"Erreur lors du déplacement: {e}")
+                        continue
+
+                input(f"Déplacez le robot à la position '{name}' puis appuyez sur Enter...")
+                current_pose = robot.get_pose().to_list()
+                positions[name] = current_pose
+                print(f"\nPosition '{name}' enregistrée:")
+                print(f"X: {current_pose[0]:.2f}, Y: {current_pose[1]:.2f}, Z: {current_pose[2]:.2f}")
+                print(f"RX: {current_pose[3]:.2f}, RY: {current_pose[4]:.2f}, RZ: {current_pose[5]:.2f}")
+                
+        elif choice == "2":
+            if not positions:
+                print("Aucune position à supprimer")
+                continue
+                
+            print("\nPositions disponibles:")
+            for i, name in enumerate(positions.keys(), 1):
+                print(f"{i}. {name}")
+                
+            try:
+                idx = int(input("\nEntrez le numéro de la position à supprimer (0 pour annuler): "))
+                if idx > 0:
+                    pos_name = list(positions.keys())[idx-1]
+                    confirm = input(f"Confirmer la suppression de {pos_name}? (o/n): ").lower()
+                    if confirm == 'o':
+                        del positions[pos_name]
+                        print(f"Position {pos_name} supprimée")
+            except (ValueError, IndexError):
+                print("Sélection invalide")
+                
+        elif choice == "3":
+            break
+    
+    # Sauvegarder les modifications
+    with open('positions.json', 'w') as f:
+        json.dump(positions, f, indent=4)
+    print("\nPositions sauvegardées dans positions.json")
+    return positions
+
 def get_camera_image():
     try:
         response = requests.get("http://172.21.182.15:8000/image.jpg")
@@ -120,47 +161,78 @@ def get_camera_image():
     return None
 
 def save_token_colors():
-    colors = {}
-    
+    # Charger les couleurs existantes
+    try:
+        with open('couleurs.json', 'r') as f:
+            colors = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        colors = {}
+
     while True:
-        # Capturer une image
-        img = get_camera_image()
-        if img is None:
-            print("Impossible de capturer l'image")
-            continue
-            
-        # Afficher l'image
-        cv2.imshow("Image", img)
-        print("\nUtilisez la souris pour sélectionner une zone de couleur.")
-        print("Instructions:")
-        print("1. Entrez le nom de la couleur (ex: 'rouge', 'vert', etc.)")
-        print("2. Cliquez et faites glisser pour sélectionner une zone")
-        print("3. Appuyez sur ENTER pour confirmer la sélection")
-        print("4. Appuyez sur 'q' pour terminer")
+        print("\n=== Couleurs enregistrées ===")
+        for name, value in colors.items():
+            print(f"{name}: {value}")
         
-        color_name = input("\nNom de la couleur (ou 'q' pour quitter): ")
-        if color_name.lower() == 'q':
+        print("\nOptions:")
+        print("1. Ajouter/Modifier une couleur")
+        print("2. Supprimer une couleur")
+        print("3. Terminer")
+        
+        choice = input("\nChoisissez une option (1-3): ")
+        
+        if choice == "1":
+            # Capturer une image
+            img = get_camera_image()
+            if img is None:
+                print("Impossible de capturer l'image")
+                continue
+                
+            cv2.imshow("Image", img)
+            print("\nUtilisez la souris pour sélectionner une zone de couleur.")
+            print("Instructions:")
+            print("1. Entrez le nom de la couleur")
+            print("2. Cliquez et faites glisser pour sélectionner une zone")
+            print("3. Appuyez sur ENTER pour confirmer la sélection")
+            
+            color_name = input("\nNom de la couleur: ").strip()
+            if color_name:
+                roi = cv2.selectROI("Image", img, False)
+                if roi[2] and roi[3]:
+                    x, y, w, h = roi
+                    selected_region = img[int(y):int(y+h), int(x):int(x+w)]
+                    avg_color = np.mean(selected_region, axis=(0, 1))
+                    colors[color_name] = avg_color.tolist()
+                    print(f"Couleur {color_name} enregistrée: {colors[color_name]}")
+            
+            cv2.destroyAllWindows()
+            
+        elif choice == "2":
+            if not colors:
+                print("Aucune couleur à supprimer")
+                continue
+                
+            print("\nCouleurs disponibles:")
+            for i, name in enumerate(colors.keys(), 1):
+                print(f"{i}. {name}")
+                
+            try:
+                idx = int(input("\nEntrez le numéro de la couleur à supprimer (0 pour annuler): "))
+                if idx > 0:
+                    color_name = list(colors.keys())[idx-1]
+                    confirm = input(f"Confirmer la suppression de {color_name}? (o/n): ").lower()
+                    if confirm == 'o':
+                        del colors[color_name]
+                        print(f"Couleur {color_name} supprimée")
+            except (ValueError, IndexError):
+                print("Sélection invalide")
+                
+        elif choice == "3":
             break
-            
-        # Fonction de callback pour la sélection de la zone
-        roi = cv2.selectROI("Image", img, False)
-        if roi[2] and roi[3]:  # Si une zone valide a été sélectionnée
-            # Extraire la zone sélectionnée
-            x, y, w, h = roi
-            selected_region = img[int(y):int(y+h), int(x):int(x+w)]
-            
-            # Calculer la moyenne des couleurs RGB
-            avg_color = np.mean(selected_region, axis=(0, 1))
-            colors[color_name] = avg_color.tolist()
-            
-            print(f"Couleur moyenne pour {color_name}: {colors[color_name]}")
-        
-        cv2.destroyAllWindows()
     
-    # Sauvegarder les couleurs dans un fichier JSON
+    # Sauvegarder les modifications
     with open('couleurs.json', 'w') as f:
         json.dump(colors, f, indent=4)
-    print("\nLes couleurs ont été sauvegardées dans couleurs.json")
+    print("\nCouleurs sauvegardées dans couleurs.json")
     return colors
 
 def save_crop_zone():
@@ -237,71 +309,114 @@ def detect_token(img, colors, crop_params):
 
 def get_led_color(color_name):
     """Convertit le nom de la couleur en valeurs RGB pour l'anneau LED"""
+    # Normaliser le nom de la couleur en minuscules
+    color_name = color_name.lower()
+    
     led_colors = {
-        "Rouge": [255, 0, 0],
-        "Vert": [0, 255, 0],
-        "Bleu": [0, 0, 255],
-        "Noir": [10, 10, 10],  # Gris très sombre pour représenter le noir
+        "rouge": [255, 0, 0],
+        "vert": [0, 255, 0],
+        "bleu": [0, 0, 255],
+        "noir": [10, 10, 10],
+        # Ajouter des variantes possibles des noms de couleurs
+        "red": [255, 0, 0],
+        "green": [0, 255, 0],
+        "blue": [0, 0, 255],
+        "black": [10, 10, 10]
     }
-    return led_colors.get(color_name, [255, 255, 255])  # Blanc par défaut
+    
+    # Si la couleur n'est pas trouvée, utiliser le blanc
+    color_values = led_colors.get(color_name, [255, 255, 255])
+    print(f"Couleur LED sélectionnée pour {color_name}: {color_values}")  # Debug
+    return color_values
 
-def pick_and_place(robot, color, positions):
-    """Prend un jeton de la couleur spécifiée et le place à la position correspondante"""
+def activate_conveyor(robot, duration=5):
+    """Active le convoyeur pendant une durée spécifiée"""
     try:
-        # Charger les positions sauvegardées
-        with open('positions.json', 'r') as f:
-            saved_positions = json.load(f)
+        robot.run_conveyor(conveyor_id, speed=50, direction=ConveyorDirection.BACKWARD)
+        delay(duration)  # Attendre la durée spécifiée
+        robot.stop_conveyor(conveyor_id)
+    except Exception as e:
+        print(f"Erreur lors de l'activation du convoyeur: {e}")
+
+def pick_and_place(robot, color, positions, color_counters):
+    try:
+        # Normaliser le nom de la couleur en minuscules
+        color = color.lower()
         
-        # Récupérer toutes les positions nécessaires
-        pickup_position = saved_positions.get(f"pick_{color.lower()}")
-        place_position = saved_positions.get(f"place_{color.lower()}")
-        intermediate_position = saved_positions.get("intermediate")  # Position sécurisée intermédiaire générale
-        intermediate_place_position = saved_positions.get(f"intermediate_place_{color.lower()}")  # Position intermédiaire spécifique
+        # Récupérer toutes les positions nécessaires depuis le paramètre positions
+        pickup_position = positions.get(f"pick_{color}")
+        place_position = positions.get(f"place_{color}_table")
+        intermediate_position = positions.get("intermediate_pick")
+        intermediate_place_position = positions.get(f"intermediate_place_table_{color}")
+        pick_table_position = positions.get(f"pick_{color}_table")
+        intermediate_convoyeur_position = positions.get("intermediate_place_convoyeur")
+        place_convoyeur_position = positions.get("place_convoyeur")
         
-        if not all([pickup_position, place_position, intermediate_position, intermediate_place_position]):
+        if not all([pickup_position, place_position, intermediate_position, intermediate_place_position, 
+                   pick_table_position, intermediate_convoyeur_position, place_convoyeur_position]):
             print(f"Positions manquantes pour la couleur {color}")
+            print("Positions trouvées:")
+            print(f"pickup_position: {pickup_position is not None}")
+            print(f"place_position: {place_position is not None}")
+            print(f"intermediate_position: {intermediate_position is not None}")
+            print(f"intermediate_place_position: {intermediate_place_position is not None}")
+            print(f"pick_table_position: {pick_table_position is not None}")
+            print(f"intermediate_convoyeur_position: {intermediate_convoyeur_position is not None}")
+            print(f"place_convoyeur_position: {place_convoyeur_position is not None}")
             return False
 
         # Changer la couleur de l'anneau LED
         led_color = get_led_color(color)
+        print(f"Configuration de l'anneau LED pour la couleur: {color}")  # Debug
         robot.led_ring_solid(led_color)
-        print(f"Anneau LED changé pour la couleur: {color}")
+        delay(0.1)  # Petit délai pour s'assurer que la LED change
 
-        # Mouvement vers la position intermédiaire générale après la prise
-        print("Déplacement vers la position intermédiaire générale...")
+        # Si une pièce de cette couleur est déjà sur la table, la déplacer vers le convoyeur
+        if color_counters[color] > 0:
+            print(f"Déplacement de la pièce {color} déjà sur la table vers le convoyeur...")
+            robot.move_pose(intermediate_position)
+            robot.move_pose(pick_table_position)
+            robot.pull_air_vacuum_pump()
+            delay(0.15)
+            robot.move_pose(intermediate_position)
+            robot.move_pose(intermediate_convoyeur_position)
+            robot.move_pose(place_convoyeur_position)
+            robot.push_air_vacuum_pump()
+            delay(0.15)
+            # Activer le convoyeur après avoir déposé la pièce
+            activate_conveyor(robot)
+            robot.move_pose(intermediate_convoyeur_position)
+            robot.move_pose(intermediate_position)
+            color_counters[color] -= 1
+
+        print("Déplacement vers la position intermédiaire pick...")
         robot.move_pose(intermediate_position)
             
-        # Séquence de prise
         print("Déplacement vers la position de prise...")
         robot.move_pose(pickup_position)
-        robot.pull_air_vacuum_pump()  # Activer la ventouse
-        delay(0.25)  # Attendre que le jeton soit bien saisi
+        robot.pull_air_vacuum_pump()
+        delay(0.15)
         
-        # Mouvement vers la position intermédiaire générale après la prise
         print("Déplacement vers la position intermédiaire générale...")
         robot.move_pose(intermediate_position)
         
-        # Mouvement vers la position intermédiaire spécifique avant la pose
         print(f"Déplacement vers la position intermédiaire de pose {color}...")
         robot.move_pose(intermediate_place_position)
         
-        # Mouvement vers la position de pose
         print("Déplacement vers la position de pose...")
         robot.move_pose(place_position)
-        robot.push_air_vacuum_pump()  # Désactiver la ventouse
-        delay(0.25)  # Attendre que le jeton soit bien déposé
+        robot.push_air_vacuum_pump()
+        delay(0.15)
+
+        print("Déplacement vers la position intermédiaire pick...")
+        robot.move_pose(intermediate_position)
         
-        # Retour à la position intermédiaire spécifique
-        print("Retour à la position intermédiaire spécifique...")
-        robot.move_pose(intermediate_place_position)
-        
-        # Remettre l'anneau LED en mode alternatif à la fin
-        robot.led_ring_alternate(color_list)
+        # Incrémenter le compteur
+        color_counters[color] += 1
         return True
         
     except Exception as e:
         print(f"Erreur lors du pick and place: {e}")
-        robot.led_ring_alternate(color_list)  # Remettre l'anneau en mode alternatif en cas d'erreur
         return False
 
 def main():
@@ -314,6 +429,9 @@ def main():
         # Charger les positions
         with open('positions.json', 'r') as f:
             positions = json.load(f)
+        
+        # Initialiser les compteurs de couleurs
+        color_counters = {"rouge": 0, "vert": 0, "bleu": 0}
         
         # Demander si on veut redéfinir la zone de prise
         redefine = input("Voulez-vous redéfinir la zone de prise ? (o/n): ").lower() == 'o'
@@ -349,7 +467,7 @@ def main():
             # Retourner à la position home avant chaque détection
             print("\nRetour à la position Home pour la détection...")
             robot.move_pose(positions["home"])
-            delay(0.25)  # Attendre la stabilisation
+            delay(0.15)  # Attendre la stabilisation
             
             img = get_camera_image()
             if img is None:
@@ -365,19 +483,27 @@ def main():
                     print("Plus de jetons à trier")
                     print("Robot déjà en position Home")
                     break
-                delay(1)
+                delay(0.15)
                 continue
             
             no_token_count = 0  # Réinitialiser le compteur si un jeton est trouvé
             print(f"Jeton {color} détecté à la position {position}")
             
+            # Définir la couleur de l'anneau LED avant le pick and place
+            led_color = get_led_color(color)
+            robot.led_ring_solid(led_color)
+            
             # Exécuter la séquence pick and place
-            if pick_and_place(robot, color, positions):
+            if pick_and_place(robot, color, positions, color_counters):
                 print(f"Jeton {color} trié avec succès")
+                # Remettre l'anneau LED en mode alternatif après succès
+                robot.led_ring_alternate(color_list)
             else:
                 print(f"Échec du tri du jeton {color}")
+                # Remettre l'anneau LED en mode alternatif après échec
+                robot.led_ring_alternate(color_list)
             
-            delay(1)  # Pause entre chaque cycle
+            delay(0.15)  # Pause entre chaque cycle
             
     except KeyboardInterrupt:
         print("\nArrêt du programme demandé par l'utilisateur")
@@ -392,8 +518,8 @@ def main():
 if __name__ == "__main__":
     define_tcp()
     robot.led_ring_alternate(color_list)
+    #save_token_colors()
+    #save_all_positions(robot)
     main()
     delay(3)
     robot.close_connection()
-
-# Fin du programme
