@@ -15,9 +15,8 @@ color_list = [
     [0, 255, 0],
 ]
 
-#robot.pull_air_vacuum_pump()  # Activer la ventouse
-#robot.push_air_vacuum_pump()  # Désactiver la ventouse
-
+# Configure et active le TCP (Tool Center Point) du robot pour utiliser la ventouse
+# Définit les coordonnées précises de l'outil par rapport à la bride du robot
 def define_tcp():
     # Définition du TCP pour la ventouse
     # Values in meters [x, y, z, roll, pitch, yaw]
@@ -31,6 +30,8 @@ def define_tcp():
     robot.enable_tcp(True)
     print('TCP Activate')
 
+# Permet à l'utilisateur de déplacer le robot vers des positions pré-enregistrées
+# Affiche un menu interactif pour sélectionner et confirmer les mouvements
 def move_to_saved_positions(robot):
     # Load saved positions
     with open('positions.json', 'r') as f:
@@ -73,6 +74,8 @@ def move_to_saved_positions(robot):
         except Exception as e:
             print(f"Error moving robot: {e}")
 
+# Interface pour gérer les positions du robot
+# Permet d'ajouter, modifier, supprimer et sauvegarder des positions dans un fichier JSON
 def save_all_positions(robot):
     # Charger les positions existantes
     try:
@@ -82,55 +85,73 @@ def save_all_positions(robot):
         positions = {}
 
     while True:
+        # Afficher simplement la liste numérotée des positions
         print("\n=== Positions enregistrées ===")
-        for name, pose in positions.items():
-            print(f"\nPosition: {name}")
-            print(f"X: {pose[0]:.2f}, Y: {pose[1]:.2f}, Z: {pose[2]:.2f}")
-            print(f"RX: {pose[3]:.2f}, RY: {pose[4]:.2f}, RZ: {pose[5]:.2f}")
+        for i, name in enumerate(positions.keys(), 1):
+            print(f"{i}. {name}")
         
         print("\nOptions:")
-        print("1. Ajouter/Modifier une position")
+        print("1. Ajouter/Modifier des positions")
         print("2. Supprimer une position")
         print("3. Terminer")
         
         choice = input("\nChoisissez une option (1-3): ")
         
         if choice == "1":
-            name = input("\nNom de la position: ").strip()
-            if name:
-                # Vérifier si la position existe déjà
-                if name in positions:
-                    print(f"\nLa position '{name}' existe déjà.")
-                    print("Le robot va se déplacer à cette position...")
+            # Sous-menu de modification
+            while True:
+                print("\n=== Mode Modification ===")
+                for i, name in enumerate(positions.keys(), 1):
+                    print(f"{i}. {name}")
+                print("0. Retour au menu principal")
+                
+                pos_choice = input("\nEntrez le numéro de la position à modifier (0 pour retour, n pour nouvelle): ").lower()
+                
+                if pos_choice == '0':
+                    break
+                elif pos_choice == 'n':
+                    name = input("Nom de la nouvelle position: ").strip()
+                else:
                     try:
-                        robot.move_pose(positions[name])
-                        confirm = input("Voulez-vous modifier cette position ? (o/n): ").lower()
-                        if confirm != 'o':
-                            print("Modification annulée")
+                        idx = int(pos_choice) - 1
+                        if 0 <= idx < len(positions):
+                            name = list(positions.keys())[idx]
+                        else:
+                            print("Numéro invalide")
                             continue
-                    except Exception as e:
-                        print(f"Erreur lors du déplacement: {e}")
+                    except ValueError:
+                        print("Entrée invalide")
                         continue
 
-                input(f"Déplacez le robot à la position '{name}' puis appuyez sur Enter...")
-                current_pose = robot.get_pose().to_list()
-                positions[name] = current_pose
-                print(f"\nPosition '{name}' enregistrée:")
-                print(f"X: {current_pose[0]:.2f}, Y: {current_pose[1]:.2f}, Z: {current_pose[2]:.2f}")
-                print(f"RX: {current_pose[3]:.2f}, RY: {current_pose[4]:.2f}, RZ: {current_pose[5]:.2f}")
+                if name:
+                    # Si c'est une position existante, montrer sa valeur actuelle
+                    if name in positions:
+                        print(f"\nPosition actuelle '{name}':")
+                        current_pose = positions[name]
+                        print(f"X: {current_pose[0]:.2f}, Y: {current_pose[1]:.2f}, Z: {current_pose[2]:.2f}")
+                        print(f"RX: {current_pose[3]:.2f}, RY: {current_pose[4]:.2f}, RZ: {current_pose[5]:.2f}")
+                        try:
+                            robot.move_pose(positions[name])
+                            confirm = input("Voulez-vous modifier cette position ? (o/n): ").lower()
+                            if confirm != 'o':
+                                continue
+                        except Exception as e:
+                            print(f"Erreur lors du déplacement: {e}")
+                            continue
+
+                    input(f"Déplacez le robot à la position '{name}' puis appuyez sur Enter...")
+                    current_pose = robot.get_pose().to_list()
+                    positions[name] = current_pose
+                    print(f"Position '{name}' enregistrée")
                 
         elif choice == "2":
             if not positions:
                 print("Aucune position à supprimer")
                 continue
                 
-            print("\nPositions disponibles:")
-            for i, name in enumerate(positions.keys(), 1):
-                print(f"{i}. {name}")
-                
             try:
                 idx = int(input("\nEntrez le numéro de la position à supprimer (0 pour annuler): "))
-                if idx > 0:
+                if idx > 0 and idx <= len(positions):
                     pos_name = list(positions.keys())[idx-1]
                     confirm = input(f"Confirmer la suppression de {pos_name}? (o/n): ").lower()
                     if confirm == 'o':
@@ -148,6 +169,8 @@ def save_all_positions(robot):
     print("\nPositions sauvegardées dans positions.json")
     return positions
 
+# Capture une image depuis la caméra réseau
+# Retourne l'image au format OpenCV ou None en cas d'erreur
 def get_camera_image():
     try:
         response = requests.get("http://172.21.182.15:8000/image.jpg")
@@ -160,6 +183,8 @@ def get_camera_image():
         print(f"Erreur lors de la récupération de l'image: {e}")
     return None
 
+# Interface pour enregistrer et gérer les couleurs des jetons
+# Permet de sélectionner des zones sur l'image et de sauvegarder leurs valeurs RGB
 def save_token_colors():
     # Charger les couleurs existantes
     try:
@@ -235,6 +260,8 @@ def save_token_colors():
     print("\nCouleurs sauvegardées dans couleurs.json")
     return colors
 
+# Définit la zone de détection des jetons sur l'image de la caméra
+# Permet de sélectionner visuellement la zone et sauvegarde ses coordonnées
 def save_crop_zone():
     """Permet de définir et sauvegarder la zone de prise des pièces"""
     img = get_camera_image()
@@ -264,6 +291,8 @@ def save_crop_zone():
         return crop_params
     return None
 
+# Analyse l'image pour détecter et identifier la couleur d'un jeton
+# Compare la couleur moyenne de la zone avec les couleurs enregistrées
 def detect_token(img, colors, crop_params):
     """Détecte la couleur du jeton dans la zone de prise recadrée"""
     try:
@@ -307,6 +336,8 @@ def detect_token(img, colors, crop_params):
         print(f"Erreur lors de la détection: {e}")
         return None, None
 
+# Convertit le nom d'une couleur en valeurs RGB pour l'anneau LED du robot
+# Gère différentes variantes de noms de couleurs (français/anglais)
 def get_led_color(color_name):
     """Convertit le nom de la couleur en valeurs RGB pour l'anneau LED"""
     # Normaliser le nom de la couleur en minuscules
@@ -329,6 +360,8 @@ def get_led_color(color_name):
     print(f"Couleur LED sélectionnée pour {color_name}: {color_values}")  # Debug
     return color_values
 
+# Contrôle le convoyeur pour évacuer les jetons
+# Active le convoyeur pendant une durée spécifiée puis l'arrête
 def activate_conveyor(robot, duration=5):
     """Active le convoyeur pendant une durée spécifiée"""
     try:
@@ -338,6 +371,8 @@ def activate_conveyor(robot, duration=5):
     except Exception as e:
         print(f"Erreur lors de l'activation du convoyeur: {e}")
 
+# Exécute la séquence complète de tri d'un jeton
+# Gère les mouvements du robot, l'activation de la ventouse et le comptage des jetons
 def pick_and_place(robot, color, positions, color_counters):
     try:
         # Normaliser le nom de la couleur en minuscules
@@ -419,6 +454,8 @@ def pick_and_place(robot, color, positions, color_counters):
         print(f"Erreur lors du pick and place: {e}")
         return False
 
+# Fonction principale qui orchestre tout le processus de tri
+# Gère la détection des jetons, le tri et les erreurs possibles
 def main():
     """Fonction principale du programme"""
     try:
@@ -518,8 +555,6 @@ def main():
 if __name__ == "__main__":
     define_tcp()
     robot.led_ring_alternate(color_list)
-    #save_token_colors()
-    #save_all_positions(robot)
     main()
     delay(3)
     robot.close_connection()
