@@ -371,190 +371,232 @@ def activate_conveyor(robot, duration=5):
     except Exception as e:
         print(f"Erreur lors de l'activation du convoyeur: {e}")
 
-# Exécute la séquence complète de tri d'un jeton
-# Gère les mouvements du robot, l'activation de la ventouse et le comptage des jetons
-def pick_and_place(robot, color, positions, color_counters):
-    try:
-        # Normaliser le nom de la couleur en minuscules
-        color = color.lower()
-        
-        # Récupérer toutes les positions nécessaires depuis le paramètre positions
-        pickup_position = positions.get(f"pick_{color}")
-        place_position = positions.get(f"place_{color}_table")
-        intermediate_position = positions.get("intermediate_pick")
-        intermediate_place_position = positions.get(f"intermediate_place_table_{color}")
-        pick_table_position = positions.get(f"pick_{color}_table")
-        intermediate_convoyeur_position = positions.get("intermediate_place_convoyeur")
-        place_convoyeur_position = positions.get("place_convoyeur")
-        
-        if not all([pickup_position, place_position, intermediate_position, intermediate_place_position, 
-                   pick_table_position, intermediate_convoyeur_position, place_convoyeur_position]):
-            print(f"Positions manquantes pour la couleur {color}")
-            print("Positions trouvées:")
-            print(f"pickup_position: {pickup_position is not None}")
-            print(f"place_position: {place_position is not None}")
-            print(f"intermediate_position: {intermediate_position is not None}")
-            print(f"intermediate_place_position: {intermediate_place_position is not None}")
-            print(f"pick_table_position: {pick_table_position is not None}")
-            print(f"intermediate_convoyeur_position: {intermediate_convoyeur_position is not None}")
-            print(f"place_convoyeur_position: {place_convoyeur_position is not None}")
-            return False
+# Supprimer les fonctions suivantes :
+# - define_movement_sequence()
+# - execute_movement_sequence()
+# - pick_and_place()
+# - ancienne version de main()
 
-        # Changer la couleur de l'anneau LED
-        led_color = get_led_color(color)
-        print(f"Configuration de l'anneau LED pour la couleur: {color}")  # Debug
-        robot.led_ring_solid(led_color)
-        delay(0.1)  # Petit délai pour s'assurer que la LED change
-
-        # Si une pièce de cette couleur est déjà sur la table, la déplacer vers le convoyeur
-        if color_counters[color] > 0:
-            print(f"Déplacement de la pièce {color} déjà sur la table vers le convoyeur...")
-            robot.move_pose(intermediate_position)
-            robot.move_pose(pick_table_position)
-            robot.pull_air_vacuum_pump()
-            delay(0.15)
-            robot.move_pose(intermediate_position)
-            robot.move_pose(intermediate_convoyeur_position)
-            robot.move_pose(place_convoyeur_position)
-            robot.push_air_vacuum_pump()
-            delay(0.15)
-            # Activer le convoyeur après avoir déposé la pièce
-            activate_conveyor(robot)
-            robot.move_pose(intermediate_convoyeur_position)
-            robot.move_pose(intermediate_position)
-            color_counters[color] -= 1
-
-        print("Déplacement vers la position intermédiaire pick...")
-        robot.move_pose(intermediate_position)
-            
-        print("Déplacement vers la position de prise...")
-        robot.move_pose(pickup_position)
-        robot.pull_air_vacuum_pump()
-        delay(0.15)
-        
-        print("Déplacement vers la position intermédiaire générale...")
-        robot.move_pose(intermediate_position)
-        
-        print(f"Déplacement vers la position intermédiaire de pose {color}...")
-        robot.move_pose(intermediate_place_position)
-        
-        print("Déplacement vers la position de pose...")
-        robot.move_pose(place_position)
-        robot.push_air_vacuum_pump()
-        delay(0.15)
-
-        print("Déplacement vers la position intermédiaire pick...")
-        robot.move_pose(intermediate_position)
-        
-        # Incrémenter le compteur
-        color_counters[color] += 1
-        return True
-        
-    except Exception as e:
-        print(f"Erreur lors du pick and place: {e}")
-        return False
-
-# Fonction principale qui orchestre tout le processus de tri
-# Gère la détection des jetons, le tri et les erreurs possibles
-def main():
-    """Fonction principale du programme"""
-    try:
-        # Charger les couleurs
-        with open('couleurs.json', 'r') as f:
-            colors = json.load(f)
-        
-        # Charger les positions
-        with open('positions.json', 'r') as f:
-            positions = json.load(f)
-        
-        # Initialiser les compteurs de couleurs
-        color_counters = {"rouge": 0, "vert": 0, "bleu": 0}
-        
-        # Demander si on veut redéfinir la zone de prise
-        redefine = input("Voulez-vous redéfinir la zone de prise ? (o/n): ").lower() == 'o'
-        
-        # Charger ou définir les paramètres de recadrage
-        crop_params = None
-        if redefine:
+# Garder les nouvelles fonctions :
+def create_sequence():
+    """Création d'une nouvelle séquence de mouvements"""
+    sequence_name = input("Nom de la séquence: ").strip()
+    if not sequence_name:
+        print("Nom de séquence invalide")
+        return
+    
+    # Configuration initiale
+    config = {
+        "name": sequence_name,
+        "tool_type": input("Type d'outil (1: Pince, 2: Ventouse): ").strip(),
+        "use_conveyor": input("Utiliser le convoyeur ? (o/n): ").lower() == 'o',
+        "analyze_colors": input("Analyser les couleurs ? (o/n): ").lower() == 'o',
+        "positions": []
+    }
+    
+    # Si analyse des couleurs activée, demander pour le recadrage
+    if config["analyze_colors"]:
+        if input("Voulez-vous recadrer la zone de détection ? (o/n): ").lower() == 'o':
             crop_params = save_crop_zone()
+            if crop_params:
+                config["crop_params"] = crop_params
         else:
             try:
                 with open('crop_params.json', 'r') as f:
-                    crop_params = json.load(f)
+                    config["crop_params"] = json.load(f)
             except FileNotFoundError:
                 print("Aucune zone de prise définie. Définition nécessaire.")
                 crop_params = save_crop_zone()
+                if crop_params:
+                    config["crop_params"] = crop_params
+    
+    # Enregistrement des positions
+    while True:
+        print("\n=== Ajout de position ===")
+        print("1. Ajouter une position")
+        print("0. Terminer")
         
-        if crop_params is None:
-            print("Impossible de continuer sans zone de prise définie")
-            return
+        if input("Choix: ") != "1":
+            break
             
-        # Vérifier que la position Home existe
-        if "home" not in positions:
-            print("Erreur: Position 'home' non définie dans positions.json")
-            return
+        position = {
+            "name": input("Nom de la position: ").strip(),
+            "coordinates": robot.get_pose().to_list(),
+            "action": input("Action (prendre/poser/conveyor/rien): ").lower()
+        }
         
-        no_token_count = 0
+        if config["analyze_colors"] and position["action"] in ["prendre", "poser"]:
+            position["color_specific"] = input("Position spécifique à une couleur ? (o/n): ").lower() == 'o'
+            if position["color_specific"]:
+                position["color"] = input("Couleur associée (rouge/vert/bleu): ").lower()
         
-        # Aller à la position home au début
-        print("Déplacement vers la position Home initiale...")
-        robot.move_pose(positions["home"])
-        
-        while True:
-            # Retourner à la position home avant chaque détection
-            print("\nRetour à la position Home pour la détection...")
-            robot.move_pose(positions["home"])
-            delay(0.15)  # Attendre la stabilisation
-            
-            img = get_camera_image()
-            if img is None:
-                continue
-            
-            # Utiliser la nouvelle version de detect_token avec les paramètres de recadrage
-            color, position = detect_token(img, colors, crop_params)
-            
-            if color is None:
-                no_token_count += 1
-                print("Aucun jeton détecté")
-                if no_token_count >= 3:  # Après 3 tentatives sans jeton
-                    print("Plus de jetons à trier")
-                    print("Robot déjà en position Home")
-                    break
-                delay(0.15)
-                continue
-            
-            no_token_count = 0  # Réinitialiser le compteur si un jeton est trouvé
-            print(f"Jeton {color} détecté à la position {position}")
-            
-            # Définir la couleur de l'anneau LED avant le pick and place
-            led_color = get_led_color(color)
-            robot.led_ring_solid(led_color)
-            
-            # Exécuter la séquence pick and place
-            if pick_and_place(robot, color, positions, color_counters):
-                print(f"Jeton {color} trié avec succès")
-                # Remettre l'anneau LED en mode alternatif après succès
-                robot.led_ring_alternate(color_list)
-            else:
-                print(f"Échec du tri du jeton {color}")
-                # Remettre l'anneau LED en mode alternatif après échec
-                robot.led_ring_alternate(color_list)
-            
-            delay(0.15)  # Pause entre chaque cycle
-            
-    except KeyboardInterrupt:
-        print("\nArrêt du programme demandé par l'utilisateur")
-        print("Retour à la position Home...")
-        robot.move_pose(positions["home"])
-        print("Robot en position Home")
+        config["positions"].append(position)
+        print(f"Position {position['name']} enregistrée")
+    
+    # Sauvegarder la séquence
+    import os
+    if not os.path.exists("sequences"):
+        os.makedirs("sequences")
+    
+    with open(f"sequences/{sequence_name}.json", 'w') as f:
+        json.dump(config, f, indent=4)
+    print(f"\nSéquence {sequence_name} sauvegardée")
+
+def list_sequences():
+    """Liste toutes les séquences disponibles"""
+    import os
+    sequences = []
+    if os.path.exists("sequences"):
+        sequences = [f for f in os.listdir("sequences") if f.endswith('.json')]
+    return sequences
+
+def load_sequence(sequence_name):
+    """Charge une séquence depuis un fichier"""
+    try:
+        with open(f"sequences/{sequence_name}", 'r') as f:
+            return json.load(f)
     except Exception as e:
-        print(f"Erreur dans le programme principal: {e}")
-    finally:
-        robot.close_connection()
+        print(f"Erreur lors du chargement de la séquence: {e}")
+        return None
+
+def execute_sequence(sequence_config):
+    """Exécute une séquence chargée"""
+    try:
+        print(f"Exécution de la séquence: {sequence_config['name']}")
+        
+        # Charger les couleurs si nécessaire
+        colors = None
+        if sequence_config["analyze_colors"]:
+            try:
+                with open('couleurs.json', 'r') as f:
+                    colors = json.load(f)
+            except FileNotFoundError:
+                print("Fichier de couleurs non trouvé")
+                return False
+        
+        for position in sequence_config["positions"]:
+            print(f"\nDéplacement vers: {position['name']}")
+            robot.move_pose(position["coordinates"])
+            
+            if position["action"] == "prendre":
+                if sequence_config["tool_type"] == "1":  # Pince
+                    robot.close_gripper()
+                else:  # Ventouse
+                    robot.pull_air_vacuum_pump()
+            elif position["action"] == "poser":
+                if sequence_config["tool_type"] == "1":  # Pince
+                    robot.open_gripper()
+                else:  # Ventouse
+                    robot.push_air_vacuum_pump()
+            elif position["action"] == "conveyor" and sequence_config["use_conveyor"]:
+                activate_conveyor(robot)
+            
+            if sequence_config["analyze_colors"] and colors:
+                img = get_camera_image()
+                if img is not None and position.get("color_specific"):
+                    color, _ = detect_token(img, colors, sequence_config["crop_params"])
+                    if color:
+                        print(f"Couleur détectée: {color}")
+                        # Allumer l'anneau LED avec la couleur détectée
+                        led_color = get_led_color(color)
+                        robot.led_ring_solid(led_color)
+            
+            delay(0.15)
+        
+        # Remettre l'anneau LED en mode alternatif à la fin
+        robot.led_ring_alternate(color_list)
+        print("Séquence terminée")
+        return True
+        
+    except Exception as e:
+        print(f"Erreur lors de l'exécution de la séquence: {e}")
+        return False
+
+def modify_sequence(sequence_name):
+    """Modifie une séquence existante"""
+    sequence = load_sequence(sequence_name)
+    if not sequence:
+        return
+    
+    while True:
+        print("\n=== Modification de séquence ===")
+        print("1. Ajouter une position")
+        print("2. Supprimer une position")
+        print("3. Modifier une position")
+        print("4. Modifier la configuration")
+        print("0. Terminer")
+        
+        choice = input("Choix: ")
+        if choice == "0":
+            break
+        # ... Implémentation des options de modification ...
+
+def main_menu():
+    """Menu principal du programme"""
+    while True:
+        print("\n=== Menu Principal ===")
+        print("1. Lancement de séquence")
+        print("2. Création de séquence")
+        print("3. Modification de séquence")
+        print("4. Calibration des couleurs")
+        print("5. Quitter")
+        
+        choice = input("\nChoisissez une option (1-5): ")
+        
+        if choice == "1":
+            sequences = list_sequences()
+            if not sequences:
+                print("Aucune séquence disponible")
+                continue
+                
+            print("\nSéquences disponibles:")
+            for i, seq in enumerate(sequences, 1):
+                print(f"{i}. {seq}")
+            
+            try:
+                idx = int(input("\nChoisissez une séquence (0 pour annuler): ")) - 1
+                if 0 <= idx < len(sequences):
+                    sequence = load_sequence(sequences[idx])
+                    if sequence:
+                        execute_sequence(sequence)
+            except ValueError:
+                print("Sélection invalide")
+                
+        elif choice == "2":
+            create_sequence()
+            
+        elif choice == "3":
+            sequences = list_sequences()
+            if not sequences:
+                print("Aucune séquence à modifier")
+                continue
+                
+            print("\nSéquences disponibles:")
+            for i, seq in enumerate(sequences, 1):
+                print(f"{i}. {seq}")
+            
+            try:
+                idx = int(input("\nChoisissez une séquence à modifier (0 pour annuler): ")) - 1
+                if 0 <= idx < len(sequences):
+                    modify_sequence(sequences[idx])
+            except ValueError:
+                print("Sélection invalide")
+                
+        elif choice == "4":
+            save_token_colors()
+            
+        elif choice == "5":
+            print("Arrêt du programme...")
+            break
 
 if __name__ == "__main__":
-    define_tcp()
-    robot.led_ring_alternate(color_list)
-    main()
-    delay(3)
-    robot.close_connection()
+    try:
+        define_tcp()
+        robot.led_ring_alternate(color_list)
+        main_menu()
+    except KeyboardInterrupt:
+        print("\nArrêt du programme demandé par l'utilisateur")
+    finally:
+        robot.move_pose(positions["home"])
+        delay(3)
+        robot.close_connection()
