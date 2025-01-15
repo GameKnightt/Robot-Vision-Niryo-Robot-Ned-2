@@ -2,11 +2,13 @@ import json
 import requests
 import numpy as np
 import cv2
+import os
 from pyniryo import*
 from time import sleep as delay
 
-robot_ip = "172.21.182.53"  # Remplacez par l'IP de votre robot
+robot_ip = "172.21.182.56"  # Remplacez par l'IP de votre robot
 robot = NiryoRobot(robot_ip)
+robot.set_arm_max_velocity(100)  # Set robot speed to 200%
 conveyor_id = robot.set_conveyor()
 
 color_list = [
@@ -17,18 +19,24 @@ color_list = [
 
 # Configure et active le TCP (Tool Center Point) du robot pour utiliser la ventouse
 # Définit les coordonnées précises de l'outil par rapport à la bride du robot
-def define_tcp():
-    # Définition du TCP pour la ventouse
+def define_tcp(tool_type="2"):  # Par défaut ventouse (2)
+    """Configure et active le TCP en fonction de l'outil"""
+    # Définition des TCPs pour chaque outil
     # Values in meters [x, y, z, roll, pitch, yaw]
-    VACUUM_TCP = [0.05, 0, 0, 0, 0, 0]  # Adjust these values based on your specific vacuum tool
+    VACUUM_TCP = [0.05, 0, 0, 0, 0, 0]  # TCP pour la ventouse
+    GRIPPER_TCP = [0.085, 0, 0, 0, 0, 0]  # TCP pour la pince
+
+    # Sélection du TCP en fonction de l'outil
+    selected_tcp = VACUUM_TCP if tool_type == "2" else GRIPPER_TCP
+    tool_name = "Ventouse" if tool_type == "2" else "Pince"
 
     # Configuration du TCP
     robot.reset_tcp()
     print('TCP Reset')
-    robot.set_tcp(VACUUM_TCP)
-    print('TCP Set')
+    robot.set_tcp(selected_tcp)
+    print(f'TCP Set pour {tool_name}')
     robot.enable_tcp(True)
-    print('TCP Activate')
+    print('TCP Activé')
 
 # Permet à l'utilisateur de déplacer le robot vers des positions pré-enregistrées
 # Affiche un menu interactif pour sélectionner et confirmer les mouvements
@@ -371,15 +379,12 @@ def activate_conveyor(robot, duration=5):
     except Exception as e:
         print(f"Erreur lors de l'activation du convoyeur: {e}")
 
-# Supprimer les fonctions suivantes :
-# - define_movement_sequence()
-# - execute_movement_sequence()
-# - pick_and_place()
-# - ancienne version de main()
-
-# Garder les nouvelles fonctions :
 def create_sequence():
     """Création d'une nouvelle séquence de mouvements"""
+    # Définir le chemin absolu pour le dossier sequences
+    base_path = "/var/home/E222668F/reseau/Perso/BUT_GEII_3/Robot_JPO/Robot-Vision-Niryo-Robot-Ned-2"
+    sequences_dir = f"{base_path}/sequences"
+
     sequence_name = input("Nom de la séquence: ").strip()
     if not sequence_name:
         print("Nom de séquence invalide")
@@ -393,6 +398,14 @@ def create_sequence():
         "analyze_colors": input("Analyser les couleurs ? (o/n): ").lower() == 'o',
         "positions": []
     }
+    
+    # Initialise l'outil
+    if config["tool_type"] == "1":  # Pince
+        robot.open_gripper()
+        print("Pince initialisée (ouverte)")
+    else:  # Ventouse
+        robot.push_air_vacuum_pump()
+        print("Ventouse initialisée (air expulsé)")
     
     # Si analyse des couleurs activée, demander pour le recadrage
     if config["analyze_colors"]:
@@ -419,10 +432,14 @@ def create_sequence():
         if input("Choix: ") != "1":
             break
             
+        name = input("Nom de la position: ").strip()
+        print("\nDéplacez maintenant le robot à la position souhaitée")
+        input("Appuyez sur Enter une fois le robot positionné...")
+        
         position = {
-            "name": input("Nom de la position: ").strip(),
+            "name": name,
             "coordinates": robot.get_pose().to_list(),
-            "action": input("Action (prendre/poser/conveyor/rien): ").lower()
+            "action": input("Action à effectuer à cette position (prendre/poser/conveyor/rien): ").lower()
         }
         
         if config["analyze_colors"] and position["action"] in ["prendre", "poser"]:
@@ -433,75 +450,113 @@ def create_sequence():
         config["positions"].append(position)
         print(f"Position {position['name']} enregistrée")
     
-    # Sauvegarder la séquence
+    # Sauvegarder la séquence avec le chemin absolu
     import os
-    if not os.path.exists("sequences"):
-        os.makedirs("sequences")
+    if not os.path.exists(sequences_dir):
+        try:
+            os.makedirs(sequences_dir)
+            print(f"Création du dossier sequences: {sequences_dir}")
+        except Exception as e:
+            print(f"Erreur lors de la création du dossier: {e}")
+            return
     
-    with open(f"sequences/{sequence_name}.json", 'w') as f:
-        json.dump(config, f, indent=4)
-    print(f"\nSéquence {sequence_name} sauvegardée")
+    sequence_path = os.path.join(sequences_dir, f"{sequence_name}.json")
+    try:
+        with open(sequence_path, 'w') as f:
+            json.dump(config, f, indent=4)
+        print(f"\nSéquence sauvegardée dans: {sequence_path}")
+    except Exception as e:
+        print(f"Erreur lors de la sauvegarde de la séquence: {e}")
 
 def list_sequences():
     """Liste toutes les séquences disponibles"""
-    import os
+    base_path = "/var/home/E222668F/reseau/Perso/BUT_GEII_3/Robot_JPO/Robot-Vision-Niryo-Robot-Ned-2"
+    sequences_dir = f"{base_path}/sequences"
+    
     sequences = []
-    if os.path.exists("sequences"):
-        sequences = [f for f in os.listdir("sequences") if f.endswith('.json')]
+    if os.path.exists(sequences_dir):
+        sequences = [f for f in os.listdir(sequences_dir) if f.endswith('.json')]
     return sequences
 
 def load_sequence(sequence_name):
     """Charge une séquence depuis un fichier"""
     try:
-        with open(f"sequences/{sequence_name}", 'r') as f:
+        base_path = "/var/home/E222668F/reseau/Perso/BUT_GEII_3/Robot_JPO/Robot-Vision-Niryo-Robot-Ned-2"
+        sequence_path = os.path.join(base_path, "sequences", sequence_name)
+        with open(sequence_path, 'r') as f:
             return json.load(f)
     except Exception as e:
         print(f"Erreur lors du chargement de la séquence: {e}")
         return None
 
-def execute_sequence(sequence_config):
+def execute_sequence(sequence_config, loop_mode=False):
     """Exécute une séquence chargée"""
     try:
         print(f"Exécution de la séquence: {sequence_config['name']}")
+        print(f"Mode boucle: {'Activé' if loop_mode else 'Désactivé'}")
         
-        # Charger les couleurs si nécessaire
-        colors = None
-        if sequence_config["analyze_colors"]:
-            try:
-                with open('couleurs.json', 'r') as f:
-                    colors = json.load(f)
-            except FileNotFoundError:
-                print("Fichier de couleurs non trouvé")
-                return False
-        
-        for position in sequence_config["positions"]:
-            print(f"\nDéplacement vers: {position['name']}")
-            robot.move_pose(position["coordinates"])
+        while True:  # Boucle principale pour le mode répétition
+            # Configure le TCP pour l'outil de la séquence
+            define_tcp(sequence_config["tool_type"])
             
-            if position["action"] == "prendre":
-                if sequence_config["tool_type"] == "1":  # Pince
-                    robot.close_gripper()
-                else:  # Ventouse
-                    robot.pull_air_vacuum_pump()
-            elif position["action"] == "poser":
-                if sequence_config["tool_type"] == "1":  # Pince
-                    robot.open_gripper()
-                else:  # Ventouse
-                    robot.push_air_vacuum_pump()
-            elif position["action"] == "conveyor" and sequence_config["use_conveyor"]:
-                activate_conveyor(robot)
+            # Initialise l'outil
+            if sequence_config["tool_type"] == "1":  # Pince
+                robot.open_gripper()
+                print("Pince initialisée (ouverte)")
+            else:  # Ventouse
+                robot.push_air_vacuum_pump()
+                print("Ventouse initialisée (air expulsé)")
             
-            if sequence_config["analyze_colors"] and colors:
-                img = get_camera_image()
-                if img is not None and position.get("color_specific"):
-                    color, _ = detect_token(img, colors, sequence_config["crop_params"])
-                    if color:
-                        print(f"Couleur détectée: {color}")
-                        # Allumer l'anneau LED avec la couleur détectée
-                        led_color = get_led_color(color)
-                        robot.led_ring_solid(led_color)
+            # Charger les couleurs si nécessaire
+            colors = None
+            if sequence_config["analyze_colors"]:
+                try:
+                    with open('couleurs.json', 'r') as f:
+                        colors = json.load(f)
+                except FileNotFoundError:
+                    print("Fichier de couleurs non trouvé")
+                    return False
             
-            delay(0.15)
+            for position in sequence_config["positions"]:
+                print(f"\nDéplacement vers: {position['name']}")
+                robot.move_pose(position["coordinates"])
+                
+                if position["action"] == "prendre":
+                    if sequence_config["tool_type"] == "1":  # Pince
+                        robot.close_gripper()
+                    else:  # Ventouse
+                        robot.pull_air_vacuum_pump()
+                elif position["action"] == "poser":
+                    if sequence_config["tool_type"] == "1":  # Pince
+                        robot.open_gripper()
+                    else:  # Ventouse
+                        robot.push_air_vacuum_pump()
+                elif position["action"] == "conveyor" and sequence_config["use_conveyor"]:
+                    activate_conveyor(robot)
+                
+                if sequence_config["analyze_colors"] and colors:
+                    img = get_camera_image()
+                    if img is not None and position.get("color_specific"):
+                        color, _ = detect_token(img, colors, sequence_config["crop_params"])
+                        if color:
+                            print(f"Couleur détectée: {color}")
+                            # Allumer l'anneau LED avec la couleur détectée
+                            led_color = get_led_color(color)
+                            robot.led_ring_solid(led_color)
+                
+                delay(0.15)
+            
+            print("Séquence terminée")
+            
+            if not loop_mode:
+                break
+            else:
+                # Suppression de la pause entre les cycles
+                print("\nDémarrage du prochain cycle...")
+                # Vérification de l'arrêt d'urgence ou si une touche a été pressée
+                if cv2.waitKey(1) & 0xFF == ord('q'):  # Vérifie si 'q' est pressé
+                    print("Arrêt de la séquence")
+                    break
         
         # Remettre l'anneau LED en mode alternatif à la fin
         robot.led_ring_alternate(color_list)
@@ -518,30 +573,194 @@ def modify_sequence(sequence_name):
     if not sequence:
         return
     
+    base_path = "/var/home/E222668F/reseau/Perso/BUT_GEII_3/Robot_JPO/Robot-Vision-Niryo-Robot-Ned-2"
+    sequence_path = os.path.join(base_path, "sequences", sequence_name)
+    
     while True:
         print("\n=== Modification de séquence ===")
+        print(f"Séquence: {sequence['name']}")
         print("1. Ajouter une position")
         print("2. Supprimer une position")
-        print("3. Modifier une position")
-        print("4. Modifier la configuration")
-        print("0. Terminer")
+        print("3. Modifier une position existante")
+        print("4. Modifier la configuration de la séquence")
+        print("0. Sauvegarder et quitter")
         
         choice = input("Choix: ")
-        if choice == "0":
-            break
-        # ... Implémentation des options de modification ...
+        
+        if choice == "1":
+            # Ajouter une nouvelle position
+            name = input("Nom de la position: ").strip()
+            print("\nDéplacez maintenant le robot à la position souhaitée")
+            input("Appuyez sur Enter une fois le robot positionné...")
+            
+            position = {
+                "name": name,
+                "coordinates": robot.get_pose().to_list(),
+                "action": input("Action à effectuer (prendre/poser/conveyor/rien): ").lower()
+            }
+            
+            if sequence["analyze_colors"] and position["action"] in ["prendre", "poser"]:
+                position["color_specific"] = input("Position spécifique à une couleur ? (o/n): ").lower() == 'o'
+                if position["color_specific"]:
+                    position["color"] = input("Couleur associée (rouge/vert/bleu): ").lower()
+            
+            sequence["positions"].append(position)
+            print(f"Position {name} ajoutée")
+
+        elif choice == "2":
+            # Supprimer une position
+            if not sequence["positions"]:
+                print("Aucune position à supprimer")
+                continue
+            
+            print("\nPositions disponibles:")
+            for i, pos in enumerate(sequence["positions"], 1):
+                print(f"{i}. {pos['name']} - Action: {pos['action']}")
+            
+            try:
+                idx = int(input("\nNuméro de la position à supprimer (0 pour annuler): ")) - 1
+                if 0 <= idx < len(sequence["positions"]):
+                    del sequence["positions"][idx]
+                    print("Position supprimée")
+            except ValueError:
+                print("Sélection invalide")
+
+        elif choice == "3":
+            # Modifier une position existante
+            if not sequence["positions"]:
+                print("Aucune position à modifier")
+                continue
+            
+            print("\nPositions disponibles:")
+            for i, pos in enumerate(sequence["positions"], 1):
+                print(f"{i}. {pos['name']} - Action: {pos['action']}")
+            
+            try:
+                idx = int(input("\nNuméro de la position à modifier (0 pour annuler): ")) - 1
+                if 0 <= idx < len(sequence["positions"]):
+                    pos = sequence["positions"][idx]
+                    
+                    # Déplacer d'abord le robot à la position actuelle
+                    print(f"\nDéplacement vers la position: {pos['name']}")
+                    try:
+                        robot.move_pose(pos["coordinates"])
+                        print("Robot en position")
+                    except Exception as e:
+                        print(f"Erreur lors du déplacement: {e}")
+                        continue
+                    
+                    print(f"\nModification de la position: {pos['name']}")
+                    print("1. Modifier la position physique")
+                    print("2. Modifier l'action")
+                    print("3. Modifier les paramètres de couleur")
+                    print("0. Annuler")
+                    
+                    sub_choice = input("Choix: ")
+                    
+                    if sub_choice == "1":
+                        print("Déplacez le robot à la nouvelle position")
+                        input("Appuyez sur Enter une fois le robot positionné...")
+                        pos["coordinates"] = robot.get_pose().to_list()
+                        print("Position mise à jour")
+                    
+                    elif sub_choice == "2":
+                        pos["action"] = input("Nouvelle action (prendre/poser/conveyor/rien): ").lower()
+                        print("Action mise à jour")
+                    
+                    elif sub_choice == "3":
+                        if sequence["analyze_colors"]:
+                            pos["color_specific"] = input("Position spécifique à une couleur ? (o/n): ").lower() == 'o'
+                            if pos["color_specific"]:
+                                pos["color"] = input("Couleur associée (rouge/vert/bleu): ").lower()
+                            print("Paramètres de couleur mis à jour")
+            except ValueError:
+                print("Sélection invalide")
+
+        elif choice == "4":
+            # Modifier la configuration générale
+            print("\nConfiguration actuelle:")
+            print(f"Type d'outil: {sequence['tool_type']}")
+            print(f"Utilise le convoyeur: {sequence['use_conveyor']}")
+            print(f"Analyse les couleurs: {sequence['analyze_colors']}")
+            
+            if input("\nModifier la configuration ? (o/n): ").lower() == 'o':
+                sequence["tool_type"] = input("Type d'outil (1: Pince, 2: Ventouse): ").strip()
+                sequence["use_conveyor"] = input("Utiliser le convoyeur ? (o/n): ").lower() == 'o'
+                sequence["analyze_colors"] = input("Analyser les couleurs ? (o/n): ").lower() == 'o'
+                
+                if sequence["analyze_colors"] and input("Reconfigurer la zone de détection ? (o/n): ").lower() == 'o':
+                    crop_params = save_crop_zone()
+                    if crop_params:
+                        sequence["crop_params"] = crop_params
+
+        elif choice == "0":
+            # Sauvegarder et quitter
+            try:
+                with open(sequence_path, 'w') as f:
+                    json.dump(sequence, f, indent=4)
+                print("Modifications sauvegardées")
+                break
+            except Exception as e:
+                print(f"Erreur lors de la sauvegarde: {e}")
+                if input("Réessayer ? (o/n): ").lower() != 'o':
+                    break
+
+def delete_sequence():
+    """Supprime une séquence existante"""
+    sequences = list_sequences()
+    if not sequences:
+        print("Aucune séquence à supprimer")
+        return
+    
+    print("\nSéquences disponibles:")
+    for i, seq in enumerate(sequences, 1):
+        print(f"{i}. {seq}")
+    
+    try:
+        idx = int(input("\nChoisissez une séquence à supprimer (0 pour annuler): ")) - 1
+        if 0 <= idx < len(sequences):
+            sequence_name = sequences[idx]
+            confirm = input(f"Êtes-vous sûr de vouloir supprimer {sequence_name} ? (o/n): ").lower()
+            if confirm == 'o':
+                base_path = "/var/home/E222668F/reseau/Perso/BUT_GEII_3/Robot_JPO/Robot-Vision-Niryo-Robot-Ned-2"
+                sequence_path = os.path.join(base_path, "sequences", sequence_name)
+                try:
+                    os.remove(sequence_path)
+                    print(f"Séquence {sequence_name} supprimée")
+                except Exception as e:
+                    print(f"Erreur lors de la suppression: {e}")
+    except ValueError:
+        print("Sélection invalide")
+
+def display_ascii_logos():
+    """Affiche le logo ASCII GEII"""
+    try:
+        base_path = "/var/home/E222668F/reseau/Perso/BUT_GEII_3/Robot_JPO/Robot-Vision-Niryo-Robot-Ned-2/ASCII-Arts"
+        # Lecture du fichier ASCII
+        with open(f'{base_path}/GEII_Art_ASCII.txt', 'r') as f:
+            lines = f.readlines()
+            print("\n") # Espace avant le logo
+            for line in lines:
+                print(line.rstrip())
+            print("\n") # Espace après le logo
+    except FileNotFoundError:
+        print("Fichier ASCII introuvable")
+    except Exception as e:
+        print(f"Erreur lors de l'affichage du logo: {e}")
 
 def main_menu():
     """Menu principal du programme"""
     while True:
+        display_ascii_logos()
         print("\n=== Menu Principal ===")
         print("1. Lancement de séquence")
         print("2. Création de séquence")
         print("3. Modification de séquence")
-        print("4. Calibration des couleurs")
-        print("5. Quitter")
+        print("4. Suppression de séquence")  # Nouvelle option
+        print("5. Calibration des couleurs")
+        print("6. Quitter")  # Décalage du numéro
         
-        choice = input("\nChoisissez une option (1-5): ")
+        choice = input("\nChoisissez une option (1-6): ")  # Mise à jour du range
         
         if choice == "1":
             sequences = list_sequences()
@@ -558,7 +777,8 @@ def main_menu():
                 if 0 <= idx < len(sequences):
                     sequence = load_sequence(sequences[idx])
                     if sequence:
-                        execute_sequence(sequence)
+                        loop_mode = input("Voulez-vous exécuter la séquence en boucle ? (o/n): ").lower() == 'o'
+                        execute_sequence(sequence, loop_mode)
             except ValueError:
                 print("Sélection invalide")
                 
@@ -582,21 +802,17 @@ def main_menu():
             except ValueError:
                 print("Sélection invalide")
                 
-        elif choice == "4":
+        elif choice == "4":  # Nouvelle option
+            delete_sequence()
+            
+        elif choice == "5":  # Décalage des numéros
             save_token_colors()
             
-        elif choice == "5":
+        elif choice == "6":  # Décalage des numéros
             print("Arrêt du programme...")
             break
 
-if __name__ == "__main__":
-    try:
-        define_tcp()
-        robot.led_ring_alternate(color_list)
-        main_menu()
-    except KeyboardInterrupt:
-        print("\nArrêt du programme demandé par l'utilisateur")
-    finally:
-        robot.move_pose(positions["home"])
-        delay(3)
-        robot.close_connection()
+robot.led_ring_alternate(color_list)
+main_menu()
+delay(3)
+robot.close_connection()
