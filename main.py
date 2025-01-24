@@ -3,7 +3,7 @@ import requests
 import numpy as np
 import cv2
 import os
-from pyniryo import*
+from pyniryo import*                                                           
 from time import sleep as delay
 
 robot_ip = "172.21.182.56"  # Remplacez par l'IP de votre robot
@@ -442,6 +442,19 @@ def create_sequence():
             "action": input("Action à effectuer à cette position (prendre/poser/conveyor/rien): ").lower()
         }
         
+        # Ajouter la durée si l'action est conveyor
+        if position["action"] == "conveyor":
+            try:
+                duration = float(input("Durée d'activation du convoyeur (en secondes): "))
+                if duration > 0:
+                    position["conveyor_duration"] = duration
+                else:
+                    position["conveyor_duration"] = 5  # Durée par défaut
+                    print("Durée invalide, utilisation de la durée par défaut (5 secondes)")
+            except ValueError:
+                position["conveyor_duration"] = 5  # Durée par défaut
+                print("Durée invalide, utilisation de la durée par défaut (5 secondes)")
+        
         if config["analyze_colors"] and position["action"] in ["prendre", "poser"]:
             position["color_specific"] = input("Position spécifique à une couleur ? (o/n): ").lower() == 'o'
             if position["color_specific"]:
@@ -532,7 +545,9 @@ def execute_sequence(sequence_config, loop_mode=False):
                     else:  # Ventouse
                         robot.push_air_vacuum_pump()
                 elif position["action"] == "conveyor" and sequence_config["use_conveyor"]:
-                    activate_conveyor(robot)
+                    duration = position.get("conveyor_duration", 5)  # Utilise 5 secondes par défaut si non spécifié
+                    print(f"Activation du convoyeur pour {duration} secondes...")
+                    activate_conveyor(robot, duration)
                 
                 if sequence_config["analyze_colors"] and colors:
                     img = get_camera_image()
